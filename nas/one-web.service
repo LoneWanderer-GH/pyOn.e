@@ -1,0 +1,23 @@
+[Unit]
+Description=One Web Server (WA Conception)
+Documentation=file:///volume1/one/one/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=one-web
+WorkingDirectory=/volume1/one
+EnvironmentFile=/etc/one/web.env
+ExecStart=/volume1/one/venv_one_web/bin/python /volume1/one/one_web_server.py
+Restart=on-failure
+RestartSec=10s
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=one-web
+
+[Install]
+WantedBy=multi-user.target

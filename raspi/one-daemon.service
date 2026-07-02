@@ -1,0 +1,28 @@
+[Unit]
+Description=One BLE Daemon (WA Conception)
+Documentation=file:///opt/one/one/README.md
+After=network.target bluetooth.target
+Wants=bluetooth.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/opt/one
+EnvironmentFile=/etc/one/daemon.env
+ExecStart=/opt/one/venv_one/bin/python /opt/one/one_daemon.py
+Restart=on-failure
+RestartSec=10s
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+# Sécurité
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+# Journalisation
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=one-daemon
+
+[Install]
+WantedBy=multi-user.target

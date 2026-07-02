@@ -1,0 +1,4 @@
+# requirements_web.txt — One Web Server (NAS Synology / serveur Linux, Python 3.9+)
+# pip install -r one/requirements_web.txt
+flask>=2.3
+pyzmq>=22.0

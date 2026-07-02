@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>One Pool Monitor</title>
+  <style>
+    /* ── Variables ──────────────────────────────────────────── */
+    :root {
+      --bg:       #0f172a;
+      --surface:  #1e293b;
+      --border:   #334155;
+      --text:     #f1f5f9;
+      --muted:    #94a3b8;
+      --ok:       #22c55e;
+      --warn:     #f59e0b;
+      --danger:   #ef4444;
+      --blue:     #3b82f6;
+      --cyan:     #06b6d4;
+      --radius:   12px;
+      --shadow:   0 2px 12px rgba(0,0,0,.4);
+    }
+
+    /* ── Reset ─────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      min-height: 100vh;
+      padding-bottom: 2rem;
+    }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: .75rem 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    header h1 { font-size: 1.2rem; font-weight: 700; flex: 1; }
+    header h1 span { color: var(--cyan); }
+
+    #conn-badge {
+      display: flex; align-items: center; gap: .4rem;
+      font-size: .8rem; color: var(--muted);
+    }
+    .dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: var(--muted);
+      transition: background .4s;
+      flex-shrink: 0;
+    }
+    .dot.connected    { background: var(--ok); }
+    .dot.connecting   { background: var(--warn); animation: pulse 1s infinite; }
+    .dot.disconnected { background: var(--muted); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    #last-ts { font-size: .7rem; color: var(--muted); white-space: nowrap; }
+
+    /* ── Main ───────────────────────────────────────────────── */
+    main { max-width: 720px; margin: 0 auto; padding: 1.5rem 1.25rem; }
+
+    /* ── Cartes ─────────────────────────────────────────────── */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      box-shadow: var(--shadow);
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: .6rem;
+      margin-bottom: 1rem;
+    }
+    .card-icon {
+      font-size: 1.4rem;
+      line-height: 1;
+    }
+    .card-title {
+      font-size: .85rem;
+      font-weight: 600;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    /* ── Lignes de valeur ───────────────────────────────────── */
+    .value-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: .45rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: .9rem;
+    }
+    .value-row:last-child { border-bottom: none; }
+    .value-label { color: var(--muted); }
+    .value-data  { font-weight: 600; }
+
+    /* ── Pills d'état ───────────────────────────────────────── */
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: .3rem;
+      padding: .2rem .65rem;
+      border-radius: 999px;
+      font-size: .8rem;
+      font-weight: 600;
+    }
+    .pill-on   { background: rgba(34,197,94,.15);  color: var(--ok); }
+    .pill-off  { background: rgba(148,163,184,.12); color: var(--muted); }
+    .pill-mode { background: rgba(59,130,246,.15);  color: var(--blue); }
+    .pill-none { background: rgba(148,163,184,.08); color: var(--muted); }
+
+    /* ── Carte connexion ─────────────────────────────────────── */
+    #card-connection .value-data { font-family: monospace; font-size: .85rem; }
+
+    /* ── Section raw JSON (debug) ───────────────────────────── */
+    details {
+      margin-top: 1.5rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem;
+    }
+    summary {
+      cursor: pointer;
+      font-size: .8rem;
+      color: var(--muted);
+      user-select: none;
+    }
+    pre {
+      margin-top: .75rem;
+      font-size: .75rem;
+      color: var(--muted);
+      white-space: pre-wrap;
+      overflow-wrap: break-word;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    /* ── Footer ─────────────────────────────────────────────── */
+    footer {
+      text-align: center;
+      font-size: .7rem;
+      color: var(--muted);
+      margin-top: 2rem;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ─────────────────────────────────────────────── -->
+<header>
+  <h1>💧 One <span>Pool Monitor</span></h1>
+  <div id="conn-badge">
+    <div class="dot disconnected" id="dot"></div>
+    <span id="conn-text">Connexion…</span>
+  </div>
+  <div id="last-ts"></div>
+</header>
+
+<!-- ── Contenu ────────────────────────────────────────────── -->
+<main>
+  <div class="cards">
+
+    <!-- Connexion BLE -->
+    <div class="card" id="card-connection">
+      <div class="card-header">
+        <div class="card-icon">📡</div>
+        <div class="card-title">Connexion BLE</div>
+      </div>
+      <div class="value-row">
+        <span class="value-label">Statut</span>
+        <span class="value-data" id="ble-status">—</span>
+      </div>
+      <div class="value-row">
+        <span class="value-label">Adresse</span>
+        <span class="value-data" id="ble-address">—</span>
+      </div>
+      <div class="value-row">
+        <span class="value-label">Dernière trame</span>
+        <span class="value-data" id="ble-last">—</span>
+      </div>
+    </div>
+
+    <!-- Pompe / Filtration -->
+    <div class="card" id="card-pump">
+      <div class="card-header">
+        <div class="card-icon">⚙️</div>
+        <div class="card-title">Pompe / Filtration</div>
+      </div>
+      <div class="value-row">
+        <span class="value-label">État</span>
+        <span class="value-data" id="pump-state">
+          <span class="pill pill-none">—</span>
+        </span>
+      </div>
+      <div class="value-row">
+        <span class="value-label">Mode</span>
+        <span class="value-data" id="pump-mode">
+          <span class="pill pill-none">—</span>
+        </span>
+      </div>
+    </div>
+
+    <!-- Éclairage -->
+    <div class="card" id="card-light">
+      <div class="card-header">
+        <div class="card-icon">💡</div>
+        <div class="card-title">Éclairage</div>
+      </div>
+      <div class="value-row">
+        <span class="value-label">État</span>
+        <span class="value-data" id="light-state">
+          <span class="pill pill-none">—</span>
+        </span>
+      </div>
+      <div class="value-row">
+        <span class="value-label">Mode</span>
+        <span class="value-data" id="light-mode">
+          <span class="pill pill-none">—</span>
+        </span>
+      </div>
+      <div class="value-row">
+        <span class="value-label">Type</span>
+        <span class="value-data" id="light-type">—</span>
+      </div>
+    </div>
+
+  </div><!-- /.cards -->
+
+  <!-- Debug JSON brut -->
+  <details>
+    <summary>JSON brut (debug)</summary>
+    <pre id="raw-json">En attente…</pre>
+  </details>
+</main>
+
+<footer>One Pool Monitor — WA Conception · lecture seule</footer>
+
+<!-- ── Scripts ─────────────────────────────────────────────── -->
+<script>
+  /* ── Helpers ─────────────────────────────────────────────── */
+  function el(id) { return document.getElementById(id); }
+
+  function pillOn(label)   { return `<span class="pill pill-on">${label}</span>`; }
+  function pillOff(label)  { return `<span class="pill pill-off">${label}</span>`; }
+  function pillMode(label) { return `<span class="pill pill-mode">${label}</span>`; }
+  function pillNone()      { return `<span class="pill pill-none">—</span>`; }
+
+  function fmtTime(iso) {
+    if (!iso) return "—";
+    try {
+      const d = new Date(iso);
+      return d.toLocaleTimeString("fr-FR");
+    } catch { return iso; }
+  }
+
+  /* ── Connexion ───────────────────────────────────────────── */
+  function applyConnection(conn) {
+    const dot     = el("dot");
+    const connTxt = el("conn-text");
+    const bleStatus = el("ble-status");
+    const bleAddr   = el("ble-address");
+    const bleLast   = el("ble-last");
+
+    if (conn.connected) {
+      dot.className     = "dot connected";
+      connTxt.textContent = "Connecté";
+      bleStatus.innerHTML = pillOn("Connecté");
+    } else {
+      dot.className       = "dot disconnected";
+      connTxt.textContent = "Déconnecté";
+      bleStatus.innerHTML = pillOff("Déconnecté");
+    }
+    bleAddr.textContent = conn.address || "—";
+    bleLast.textContent = fmtTime(conn.last_seen);
+  }
+
+  /* ── Pompe ───────────────────────────────────────────────── */
+  function applyPump(pump) {
+    const stateEl = el("pump-state");
+    const modeEl  = el("pump-mode");
+    if (pump.state === null || pump.state === undefined) {
+      stateEl.innerHTML = pillNone();
+    } else {
+      stateEl.innerHTML = pump.state ? pillOn(pump.state_label) : pillOff(pump.state_label);
+    }
+    modeEl.innerHTML = pump.mode !== null && pump.mode !== undefined
+      ? pillMode(pump.mode_label) : pillNone();
+  }
+
+  /* ── Éclairage ───────────────────────────────────────────── */
+  function applyLight(light) {
+    const stateEl = el("light-state");
+    const modeEl  = el("light-mode");
+    const typeEl  = el("light-type");
+    if (light.state === null || light.state === undefined) {
+      stateEl.innerHTML = pillNone();
+    } else {
+      stateEl.innerHTML = light.state ? pillOn(light.state_label) : pillOff(light.state_label);
+    }
+    modeEl.innerHTML = light.mode !== null && light.mode !== undefined
+      ? pillMode(light.mode_label) : pillNone();
+    typeEl.textContent = light.type !== null && light.type !== undefined
+      ? `Type ${light.type}` : "—";
+  }
+
+  /* ── Timestamp header ────────────────────────────────────── */
+  function applyTs(ts) {
+    el("last-ts").textContent = ts ? `Mis à jour ${fmtTime(ts)}` : "";
+  }
+
+  /* ── Snapshot complet ────────────────────────────────────── */
+  function applyState(state) {
+    if (state.connection) applyConnection(state.connection);
+    if (state.pump)       applyPump(state.pump);
+    if (state.light)      applyLight(state.light);
+    applyTs(state.connection && state.connection.last_seen);
+    el("raw-json").textContent = JSON.stringify(state, null, 2);
+  }
+
+  /* ── SSE ─────────────────────────────────────────────────── */
+  function startSSE() {
+    const es = new EventSource("/api/stream");
+
+    es.addEventListener("init", e => {
+      applyState(JSON.parse(e.data));
+    });
+
+    es.addEventListener("connection", e => {
+      applyConnection(JSON.parse(e.data));
+    });
+
+    es.addEventListener("status", e => {
+      const d = JSON.parse(e.data);
+      if (d.pump)  applyPump(d.pump);
+      if (d.light) applyLight(d.light);
+      applyTs(d.ts);
+    });
+
+    es.addEventListener("pump_mode",  e => applyPump(JSON.parse(e.data)));
+    es.addEventListener("pump_state", e => applyPump(JSON.parse(e.data)));
+    es.addEventListener("light_mode", e => applyLight(JSON.parse(e.data)));
+    es.addEventListener("light_state",e => applyLight(JSON.parse(e.data)));
+
+    es.onerror = () => {
+      el("dot").className = "dot connecting";
+      el("conn-text").textContent = "SSE déconnecté — reconnexion…";
+      // EventSource se reconnecte automatiquement
+    };
+  }
+
+  startSSE();
+</script>
+</body>
+</html>
