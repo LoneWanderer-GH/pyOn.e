@@ -1,17 +1,15 @@
-# Module One — WA Conception (Reverse Engineering BLE)
+# REVERSE ENGINEERING / RETRO INGENIEURIE
 
-Bibliothèque Python 3 + démon headless pour le module **One** de WA Conception
-(contrôleur piscine pompe + éclairage).
+L'analyse s'appuie sur une décompilation du code Hermes de l'appli Android "On.e".
+Les éléments suivants sont déterminés par l'analyse de code manuelle et une assitance avec un LLM de codage.
 
-Fichiers :
-- `one_ble.py` — bibliothèque BLE (scan, appairage, connexion, lecture statut)
-- `../one_daemon.py` — démon ZMQ headless (à la racine du projet)
+**Un doute subsiste sur les valeurs des clés de chiffrement utilisées et sur la mécanique d'appairage.**
 
 ---
 
-### UUIDs GATT
+## UUIDs GATT
 
-#### Service système (auth)
+### Service système (auth)
 | Caractéristique | UUID | Accès |
 |---|---|---|
 | Service | `fbde0000-4c7b-4e67-8292-a9b8e686cf87` | — |
@@ -19,7 +17,7 @@ Fichiers :
 | SHARED_KEY | `fbde0002-4c7b-4e67-8292-a9b8e686cf87` | Read |
 | ENCRYPT_KEY | `fbde0003-4c7b-4e67-8292-a9b8e686cf87` | Write |
 
-#### Service One (pompe + éclairage)
+### Service One (pompe + éclairage)
 | Caractéristique | UUID | Accès |
 |---|---|---|
 | Service | `fbde0100-4c7b-4e67-8292-a9b8e686cf87` | — |
@@ -28,7 +26,7 @@ Fichiers :
 | ECLAIRAGE | `fbde0103-4c7b-4e67-8292-a9b8e686cf87` | Read/Write |
 | STATUS | `fbde0104-4c7b-4e67-8292-a9b8e686cf87` | Read/Notify (chiffré) |
 
-#### Services standard GATT
+### Services standard GATT
 | Caractéristique | UUID | Usage |
 |---|---|---|
 | Model (2A24) | `00002a24-0000-1000-8000-00805f9b34fb` | Modèle (`ON.E`, etc.) |
@@ -39,7 +37,7 @@ Fichiers :
 
 ---
 
-### Advertising BLE
+## Advertising BLE
 
 Le module annonce deux UUID de service différents selon son mode :
 
@@ -50,7 +48,7 @@ Le module annonce deux UUID de service différents selon son mode :
 
 ---
 
-### Handshake d'authentification (applicatif)
+## Handshake d'authentification (applicatif)
 
 Exécuté à **chaque connexion**, avant toute lecture/écriture des caractéristiques
 du service One.
@@ -77,7 +75,7 @@ du service One.
 
 ---
 
-### Bonding BLE (chiffrement couche BLE)
+## Bonding BLE (chiffrement couche BLE)
 
 La caractéristique **STATUS (FBDE0104)** requiert un lien BLE chiffré
 (propriété `Encrypted Read/Notify`). Ce niveau de sécurité est distinct
@@ -100,7 +98,7 @@ de l'authentification applicative AES décrite ci-dessus.
 
 ---
 
-### Registre STATUS (FBDE0104)
+## Registre STATUS (FBDE0104)
 
 Un seul octet, bitfield :
 
@@ -112,82 +110,3 @@ Bit  [5]    → eclairage_state   (0=éteint, 1=allumé)
 Bit  [6]    → eclairage_type    (0 ou 1 selon type installé)
 Bit  [7]    → réservé
 ```
-
----
-
-## Installation
-
-```bash
-pip install bleak pycryptodome pyzmq
-```
-
----
-
-## Appairage initial
-
-```bash
-# Appuyer sur le bouton du module One, puis :
-python one_daemon.py --pair-only
-```
-
-La `shared_key` et l'adresse BLE sont sauvegardées dans
-`~/.config/one_daemon.json`.
-
----
-
-## Démarrage normal
-
-```bash
-python one_daemon.py
-```
-
-Ou avec paramètres explicites :
-
-```bash
-python one_daemon.py --address E7:4A:DB:3B:62:E5 --log-level DEBUG
-```
-
----
-
-## Topics ZMQ publiés (port 5560)
-
-| Topic | Contenu JSON |
-|---|---|
-| `one/connection` | `{"connected": true/false, "address": "..."}` |
-| `one/status` | Snapshot complet (voir ci-dessous) |
-| `one/pump/mode` | `{"value": 0/1/2, "label": "Manuel/Horloge/Auto"}` |
-| `one/pump/state` | `{"value": 0/1}` |
-| `one/light/mode` | `{"value": 0/1/2, "label": "Manuel/Horloge/Auto"}` |
-| `one/light/state` | `{"value": 0/1}` |
-
-Exemple `one/status` :
-```json
-{
-  "filtration_mode": 1,
-  "filtration_mode_label": "Horloge",
-  "filtration_state": 1,
-  "eclairage_mode": 0,
-  "eclairage_mode_label": "Manuel",
-  "eclairage_state": 0,
-  "eclairage_type": 0
-}
-```
-
-## Commandes ZMQ (port 5561)
-
-| Topic | Effet |
-|---|---|
-| `one/cmd/retry` | Force une tentative de reconnexion immédiate |
-| `one/cmd/pair` | Déclenche un appairage (bouton module requis) |
-
----
-
-## Coexistence avec ble_daemon.py
-
-| Démon | PUB | CMD | Préfixe topics |
-|---|---|---|---|
-| `ble_daemon.py` (régulateur Corelec) | 5555 | 5556 | `corelec/` |
-| `one_daemon.py` (module One) | 5560 | 5561 | `one/` |
-
-Les deux démons peuvent tourner simultanément — BlueZ gère l'adaptateur BLE.
-
