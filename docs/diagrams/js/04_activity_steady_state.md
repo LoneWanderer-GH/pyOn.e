@@ -11,12 +11,12 @@ flowchart TD
         direction LR
         subgraph NOTIFY["Flux NOTIFY — réception passive"]
             N1[Réception NOTIFY\nFBDE0104\n1 octet] --> N2["receiveComModel(deviceModel, data):\nbits 0-1: filtrationModeFonctionnement\nbit  2:   filtrationModeState\nbits 3-4: eclairageModeFonctionnement\nbit  5:   eclairageModeState\nbit  6:   eclairageType"]
-            N2 --> N3[onDataChange.emit\n→ UI re-render]
+            N2 --> N3["onDataChange.emit<br/>UI re-render"]
             N3 --> N1
         end
 
         subgraph ADV["Flux ADV — status sans connexion"]
-            A1[Réception ADV packet\nFBDE0000 + serviceData] --> A2[receiveAdvertisingData\nmême décodage octet 0\n→ InProximity]
+            A1["Réception ADV packet<br/>FBDE0000 + serviceData"] --> A2["receiveAdvertisingData<br/>même décodage octet 0<br/>état InProximity"]
             A2 --> A3[onDataChange.emit]
         end
     end

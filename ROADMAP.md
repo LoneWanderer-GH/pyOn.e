@@ -30,9 +30,9 @@
 
 ### Corrections protocole BLE (issues identifiées par analyse RE vs Python)
 
-- [ ] **[🔴 Fix #1 — CRITIQUE]** `one/one_ble.py` — `connect_and_auth()` : ajouter re-lecture FBDE0002 après auth pour détecter une rotation de shared_key par le module.  
+- [X] **[🔴 Fix #1 — CRITIQUE]** `one/one_ble.py` — `connect_and_auth()` : ajouter re-lecture FBDE0002 après auth pour détecter une rotation de shared_key par le module.  
   → Suspect principal des reconnexions instables.  
-  → Référence : [docs/diagrams/python/04_diff_analysis.md](docs/diagrams/python/04_diff_analysis.md)
+  → Implémenté 2026-07-05 — voir [docs/diagrams/python/04_diff_analysis.md](docs/diagrams/python/04_diff_analysis.md)
 
 - [ ] **[⚠️ Check #2]** Vérifier si `read_gatt_char(FBDE0104)` retourne `NotAuthorized` sans bonding BLE.  
   → Test avec `bluetoothctl` ou nRF Connect sur Raspi.  

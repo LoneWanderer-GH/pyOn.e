@@ -12,8 +12,8 @@ flowchart TD
 
     subgraph SCAN_ADV["startAdvertisingScan — scan continu en arrière-plan"]
         SCAN[startDeviceScan\nFBDE0000 + FBDE0100\nScanMode.LowLatency\nallowDuplicates: true] --> FOUND{Device connu\ndans _scanDevicesHistory ?}
-        FOUND -- Oui + serviceData --> ADVDATA[receiveAdvertisingData\nparser octet 0 → status\nbits: filtration + éclairage\n→ état InProximity]
-        ADVDATA --> EMIT_ADV[onDataChange.emit\n→ UI mise à jour\nsans connexion]
+        FOUND -- Oui + serviceData --> ADVDATA["receiveAdvertisingData<br/>parser octet 0 : status<br/>bits: filtration + éclairage<br/>état InProximity"]
+        ADVDATA --> EMIT_ADV["onDataChange.emit<br/>UI mise à jour<br/>sans connexion"]
     end
 
     SCAN_ADV --> CONNECT_CHOICE{Action utilisateur}

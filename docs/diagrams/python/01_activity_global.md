@@ -12,7 +12,7 @@ flowchart TD
     SCAN_P --> FOUND_P{Module trouvé ?}
     FOUND_P -- Non --> PUBERR[ZMQ PUB\none/connection error]
     FOUND_P -- Oui --> PAIR_PROC[OneBLEClient.pair\nsee sequence_pairing.md]
-    PAIR_PROC --> SAVE[save_config\nshared_key.hex() → JSON]
+    PAIR_PROC --> SAVE["save_config<br/>shared_key.hex() sauvegardé"]
     SAVE --> POST_PAIR[Session post-appairage\nread_status + subscribe]
     POST_PAIR --> LOOP
 
@@ -29,8 +29,8 @@ flowchart TD
     PUBERR2 --> DISC
 
     subgraph ZMQ_CMD["ZMQ PULL :5561 — commandes entrantes"]
-        CMD1[one/cmd/retry → _retry_event.set]
-        CMD2[one/cmd/pair  → _pair_event.set]
+        CMD1["one/cmd/retry : _retry_event.set"]
+        CMD2["one/cmd/pair : _pair_event.set"]
     end
 
     subgraph ZMQ_PUB["ZMQ PUB :5560 — publications"]
