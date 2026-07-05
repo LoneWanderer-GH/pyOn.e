@@ -52,7 +52,13 @@ sequenceDiagram
         end
         Note right of C: Exception ignorée si FBDE0002\nrefusé en mode normal
     end
-
+    rect rgb(255, 230, 200)
+        Note over C,Dev: ── Fix #2 — Bonding BLE (SMP pair) post-AES-auth ──
+        C->>Dev: pair() [BlueZ SMP pairing]
+        Note right of C: CRITIQUE: appelé APRES _authenticate()<br/>Android/iOS font ça en transparent<br/>BlueZ requiert appel explicite
+        Dev-->>C: bond établi (lien chiffré actif)
+        Note over C: INFO: Bonding BLE établi<br/>(ou WARNING si bond déjà actif en cache)
+    end
     rect rgb(240, 220, 255)
         Note over C,Dev: ── _sync_rtc() ── [✅ conforme JS syncRTCProcess]
         C->>Dev: write_gatt_char(2A08, [year%100, month, day, h, m, s])
@@ -95,13 +101,14 @@ sequenceDiagram
     D->>ZMQ: one/connection {state: "disconnected", retry: N+1}
 ```
 
-### Conformité vs JS — état après Fix #1
+### Conformité vs JS — état après Fix #1 + Fix #2
 
 | Étape JS | Implémenté Python | Statut |
 |---|---|---|
 | identificationProcess (read 2A24/25/26) | ❌ Absent en mode normal | ℹ️ Mineur |
 | authorisationProcess (FBDE0001→0003) | ✅ `_authenticate()` | ✅ |
 | **Re-lecture FBDE0002 post-auth** | **✅ Fix #1 appliqué** | **✅ Corrigé** |
+| **Bonding BLE SMP (pair() post-auth)** | **✅ Fix #2 appliqué** | **✅ Corrigé** |
 | syncRTCProcess | ✅ `_sync_rtc()` | ✅ |
 | utilisationProcess (subscribe + read) | ✅ dans `_session()` | ✅ |
 

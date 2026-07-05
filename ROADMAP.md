@@ -34,9 +34,10 @@
   → Suspect principal des reconnexions instables.  
   → Implémenté 2026-07-05 — voir [docs/diagrams/python/04_diff_analysis.md](docs/diagrams/python/04_diff_analysis.md)
 
-- [ ] **[⚠️ Check #2]** Vérifier si `read_gatt_char(FBDE0104)` retourne `NotAuthorized` sans bonding BLE.  
-  → Test avec `bluetoothctl` ou nRF Connect sur Raspi.  
-  → Si oui : le firmware exige SMP bonding en plus de l'auth AES — investiguer bonding BlueZ manuel.
+- [X] **[⚠️ Check #2 — Confirmé par logs]** `one/one_ble.py` — `connect_and_auth()` : ajouter `pair()` après l'AES auth pour établir le lien BLE chiffré (SMP bonding).  
+  → Confirmé par logs : `NotAuthorized` sur 2A08 et FBDE0104 sans bonding.  
+  → Android/iOS glosent le SMP transparemment ; BlueZ/bleak requièrent `pair()` explicite.  
+  → Implémenté 2026-07-05
 
 - [ ] **[ℹ️ Amélioration #3]** `one/one_ble.py` — `scan_for_use()` : parser `advertisement_data.service_data` pour obtenir le status en mode proximité sans connexion (comme JS).
 

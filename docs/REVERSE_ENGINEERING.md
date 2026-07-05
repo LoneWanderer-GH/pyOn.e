@@ -97,24 +97,27 @@ du service One.
 
 ## Bonding BLE (chiffrement couche BLE)
 
-La caractéristique **STATUS (FBDE0104)** requiert un lien BLE chiffré
-(propriété `Encrypted Read/Notify`). Ce niveau de sécurité est distinct
-de l'authentification applicative AES décrite ci-dessus.
+La caractéristique **STATUS (FBDE0104)** et le **service Time (2A08/2A09)** requièrent
+un lien BLE chiffré (SMP bonding). Ce niveau de sécurité est distinct
+de l’authentification applicative AES décrite ci-dessus.
 
-**Séquence complète pour un premier appairage :**
+**Confirmé par log (2026-07-05)** : sans bonding, les deux opérations retournent
+`[org.bluez.Error.NotAuthorized] Operation Not Authorized` même après une AES auth réussie.
 
-1. Appuyer sur le bouton physique du module (→ module en mode `FBDE0100`)
-2. Se connecter et effectuer le handshake AES applicatif
-3. Appeler `client.pair()` (BlueZ ↔ module : échange de clés BLE, création du bond)
-4. Stocker `shared_key` pour les reconnexions futures
+**Séquence correcte (implémentée dans `one_ble.py`) :**
 
-**Reconnexions suivantes :**
+1. `connect()` — connexion BLE bas niveau
+2. `_authenticate()` — AES handshake (FBDE0001 → FBDE0003), **sans chiffrement**
+3. `pair()` — bonding SMP (BlueZ ↔ module), **après** l’AES auth
+4. `_sync_rtc()` — écriture 2A08/2A09, **maintenant autorisée**
+5. `read_gatt_char(FBDE0104)` / `start_notify(FBDE0104)` — **maintenant autorisé**
 
-- BlueZ réutilise automatiquement le bond stocké → lien chiffré dès le `connect()`
-- Effectuer uniquement le handshake AES applicatif (FBDE0001→FBDE0003)
-- **Ne pas rappeler `pair()`** : cela provoque un re-connect BlueZ interne qui
-  efface le cache de service-discovery de bleak, causant l'erreur
-  `"Service Discovery has not been performed yet"`
+**Pourquoi l’ordre est critique :** `pair()` appelé *avant* l’AES auth provoque
+un `AuthenticationFailed` et une déconnexion immédiate.
+
+**Comportement Android/iOS :** le SMP bonding est déclenché de façon transparente
+par l’OS quand une caractéristique répond `Insufficient Encryption`.
+BlueZ sur Linux/Raspi ne le fait pas automatiquement : `pair()` est explicite.
 
 ---
 
@@ -157,6 +160,6 @@ eclairageType                = data.readUInt8(0) >> 6 & 1
 
 | # | Problème | Hypothèse | Action |
 |---|---|---|---|
-| 1 | Appairage instable | `connect_and_auth()` ne relit pas FBDE0002 post-auth → rotation de clé non détectée | **Fix #1** dans `one/one_ble.py` |
-| 2 | `NotAuthorized` sur FBDE0104 | Firmware exige bonding BLE en plus de l'auth AES | Vérifier avec `bluetoothctl` / nRF Connect |
+| 1 | Appairage instable | `connect_and_auth()` ne relit pas FBDE0002 post-auth | **Fix #1 appliqué 2026-07-05** |
+| 2 | `NotAuthorized` sur FBDE0104 et 2A08 | Confirmé : firmware exige SMP bonding | **Fix #2 appliqué 2026-07-05** |
 | 3 | Clé privée PRIVATE_KEY | Extraite du binaire JS — supposée fixe pour tous les appareils | Confirmer avec un 2e appareil |

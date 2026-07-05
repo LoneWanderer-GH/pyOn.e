@@ -316,24 +316,21 @@ class OneBLEClient:
     # ---------------------------------------------------------------- connexion normale
 
     async def connect_and_auth(self) -> None:
-        """Connexion + auth AES + sync RTC.
+        """Connexion + auth AES + bonding BLE + sync RTC.
 
-        Séquence (calquée sur connect() JS de BleNetworkManager) :
+        Séquence corrigée (Fix #1 + Fix #2) :
           1. Connexion BLE.
-          2. Auth AES applicative (FBDE0001 → FBDE0003) — sans chiffrement BLE.
-          3. Re-lecture FBDE0002 post-auth : détection rotation de shared_key.
-          4. Sync RTC (best-effort, non bloquant).
+          2. Auth AES applicative (FBDE0001 → FBDE0003) — fonctionne sans chiffrement.
+          3. Re-lecture FBDE0002 post-auth : détection rotation de shared_key (Fix #1).
+          4. Bonding BLE (SMP pair()) — APRÈS l'AES auth (Fix #2).
+             Le module exige un lien chiffré pour 2A08 (RTC) et FBDE0104 (STATUS).
+             Android/iOS gèrent le bonding de façon transparente (OS); BlueZ requiert
+             un appel explicite. pair() est appelé APRÈS l'AES auth car l'ordre
+             inverse provoque un AuthenticationFailed.
+          5. Sync RTC (best-effort, non bloquant).
 
-        Fix #1 (2026-07-05) : ajout de la re-lecture FBDE0002 après auth.
-        En mode association, le JS ne relit pas FBDE0002 en mode connexion normale,
-        mais certains firmwares renouvellent la shared_key après chaque session.
-        Si la clé change, on met à jour self.shared_key ET on rejoue l'auth avec la
-        nouvelle clé pour que la session courante soit valide.
-
-        Note : ce module (RC0 / ON.E firmware 2.x) rejette pair() avec
-        AuthenticationFailed ET se déconnecte immédiatement. Le bonding BLE
-        n'est pas supporté en mode normal. L'accès à FBDE0104 passe uniquement
-        par l'auth AES applicative, comme le fait l'app mobile (aucun pair()).
+        Fix #1 (2026-07-05) : re-lecture FBDE0002 post-auth, détection rotation clé.
+        Fix #2 (2026-07-05) : ajout pair() post-AES-auth pour lien BLE chiffré.
         """
         logger.info("Connexion à %s", self.address)
         self._client = BleakClient(self.address)
@@ -361,6 +358,20 @@ class OneBLEClient:
             # Non bloquant : certains firmwares refusent la lecture de FBDE0002 en
             # mode connexion normale (uniquement accessible en mode appairage)
             logger.debug("Re-lecture FBDE0002 post-auth ignorée: %s", e)
+
+        # Fix #2 — Bonding BLE (SMP) après AES auth
+        # Le module répond NotAuthorized sur 2A08 et FBDE0104 sans lien chiffré.
+        # Android/iOS déclenchent le SMP automatiquement ; BlueZ requiert pair().
+        # L'ordre est critique : pair() APRÈS _authenticate(), pas avant.
+        # Référence : docs/diagrams/python/04_diff_analysis.md — Check #2
+        try:
+            logger.debug("Tentative bonding BLE (SMP pair)…")
+            await self._client.pair()
+            logger.info("Bonding BLE établi")
+        except Exception as e:
+            # Ignoré : si le bond existe déjà en cache BlueZ, pair() peut
+            # retourner une erreur bénigne. On continue dans tous les cas.
+            logger.warning("pair() ignoré (bond peut-être déjà actif): %s", e)
 
         await self._sync_rtc()
         logger.info("Auth + RTC OK")
