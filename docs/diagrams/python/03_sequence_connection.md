@@ -20,8 +20,8 @@ sequenceDiagram
         Note over C,Dev: ── Connexion BLE ──
         C->>BL: BleakClient(address) [pas de timeout explicite]
         BL->>Dev: connect() [L2CAP / ATT]
-        Note over Dev: ⚠️ Pas de requestMTU\nBlueZ négocie auto
-        Dev-->>BL: connected
+        Note over Dev: BlueZ réutilise le bond stocké<br/>depuis l'appairage initial<br/>→ lien chiffré dès connect()<br/>(si bond absent : relancer --pair)
+        Dev-->>BL: connected (lien chiffré)
         BL-->>C: connected
     end
 
@@ -53,11 +53,8 @@ sequenceDiagram
         Note right of C: Exception ignorée si FBDE0002\nrefusé en mode normal
     end
     rect rgb(255, 230, 200)
-        Note over C,Dev: ── Fix #2 — Bonding BLE (SMP pair) post-AES-auth ──
-        C->>Dev: pair() [BlueZ SMP pairing]
-        Note right of C: CRITIQUE: appelé APRES _authenticate()<br/>Android/iOS font ça en transparent<br/>BlueZ requiert appel explicite
-        Dev-->>C: bond établi (lien chiffré actif)
-        Note over C: INFO: Bonding BLE établi<br/>(ou WARNING si bond déjà actif en cache)
+        Note over C,Dev: ── Fix #2-rev : Bonding SMP dans OneBLEClient.pair() ──
+        Note over C: Le bond BlueZ est créé UNE SEULE FOIS<br/>lors de l'appairage initial (bouton pressé)<br/>voir 02_sequence_pairing.md<br/>En mode normal : pas de pair() ici
     end
     rect rgb(240, 220, 255)
         Note over C,Dev: ── _sync_rtc() ── [✅ conforme JS syncRTCProcess]

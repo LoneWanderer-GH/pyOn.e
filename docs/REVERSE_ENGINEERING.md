@@ -101,23 +101,31 @@ La caractéristique **STATUS (FBDE0104)** et le **service Time (2A08/2A09)** req
 un lien BLE chiffré (SMP bonding). Ce niveau de sécurité est distinct
 de l’authentification applicative AES décrite ci-dessus.
 
-**Confirmé par log (2026-07-05)** : sans bonding, les deux opérations retournent
+**Confirmé par logs (2026-07-05)** : sans bonding, les deux opérations retournent
 `[org.bluez.Error.NotAuthorized] Operation Not Authorized` même après une AES auth réussie.
 
-**Séquence correcte (implémentée dans `one_ble.py`) :**
+**Comportement du module selon le mode :**
 
-1. `connect()` — connexion BLE bas niveau
-2. `_authenticate()` — AES handshake (FBDE0001 → FBDE0003), **sans chiffrement**
-3. `pair()` — bonding SMP (BlueZ ↔ module), **après** l’AES auth
-4. `_sync_rtc()` — écriture 2A08/2A09, **maintenant autorisée**
-5. `read_gatt_char(FBDE0104)` / `start_notify(FBDE0104)` — **maintenant autorisé**
+| Mode | SMP pair() accepté ? |
+|---|---|
+| Appairage (FBDE0100, bouton pressé) | ✅ Oui — crée le bond BlueZ |
+| Connexion normale (FBDE0000) | ❌ Non — `AuthenticationFailed` ou `AuthenticationCanceled` + déconnexion |
 
-**Pourquoi l’ordre est critique :** `pair()` appelé *avant* l’AES auth provoque
-un `AuthenticationFailed` et une déconnexion immédiate.
+**Séquence correcte — appairage initial (une seule fois, bouton pressé) :**
 
-**Comportement Android/iOS :** le SMP bonding est déclenché de façon transparente
-par l’OS quand une caractéristique répond `Insufficient Encryption`.
-BlueZ sur Linux/Raspi ne le fait pas automatiquement : `pair()` est explicite.
+1. `connect()` — connexion BLE en mode FBDE0100
+2. `_authenticate()` — AES handshake (FBDE0001 → FBDE0003)
+3. `pair()` — bonding SMP, stocké dans `/var/lib/bluetooth/`
+4. `_sync_rtc()` + subscribe/read FBDE0104
+
+**Séquence correcte — reconnexions normales :**
+
+1. `connect()` — BlueZ auto-chiffre via bond stocké → FBDE0104 et 2A08 accessibles
+2. `_authenticate()` — AES handshake
+3. `_sync_rtc()` + subscribe/read FBDE0104
+
+> ⚠️ Si le bond est perdu (nouveau Raspi, `/var/lib/bluetooth/` effacé) :
+> relancer avec `--pair` (bouton module requis) pour recréer le bond BlueZ.
 
 ---
 

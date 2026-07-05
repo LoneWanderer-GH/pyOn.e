@@ -19,7 +19,7 @@
 | 7 | syncRTCProcess | 2A08 (6B year%100) + 2A09 (1B) | Idem | ✅ | ✅ Conforme |
 | 8 | utilisationProcess (subscribe+read) | `monitorCharacteristic` puis `readCharacteristic` | `start_notify` puis `read_gatt_char` | ✅ | ✅ Conforme |
 | 9 | **Re-lecture FBDE0002 post-auth** | ❌ Absent JS | En `pair()` ✅ / **en `connect_and_auth()` ✅ Fix #1 2026-07-05** | 🔴→✅ | ✅ Corrigé |
-| 10 | **Bonding BLE SMP** | OS transparent (Android/iOS) | `bleak.pair()` appelé **après** AES auth ✅ Fix #2 2026-07-05 | ⚠️→✅ | ✅ Corrigé |
+| 10 | **Bonding BLE SMP** | OS transparent (Android/iOS) | `bleak.pair()` dans `OneBLEClient.pair()` (mode bouton) ✅ Fix #2-rev 2026-07-05 | ⚠️→✅ | ✅ Corrigé |
 | 11 | Boucle reconnexion | `reset()` + relance immédiate | Backoff exponentiel 3–60s | ℹ️ Politique différente | ✅ Acceptable |
 
 ---
@@ -85,11 +85,14 @@ flowchart TD
 **Méthode** : `connect_and_auth()`  
 **Commit** : `fix(ble): re-read FBDE0002 post-auth in connect_and_auth to detect shared_key rotation`
 
-### Check #2 — Bonding BLE SMP ✅ APPLIQUÉ 2026-07-05
-**Observation** : `NotAuthorized` sur 2A08 (RTC) et FBDE0104 (STATUS) confirmé par les logs.
+### Check #2 — Bonding BLE SMP ✅ APPLIQUÉ Fix #2-rev 2026-07-05
+**Observation** : `NotAuthorized` sur 2A08 et FBDE0104 confirmé par les logs.
 **Cause** : BlueZ ne déclenche pas le SMP automatiquement contrairement à Android/iOS.
-**Fix** : `pair()` appelé dans `connect_and_auth()` APRES `_authenticate()`.  
-**Commit** : `fix(ble): add BLE SMP pair() after AES auth in \`connect_and_auth\` to fix NotAuthorized on FBDE0104`
+**Observation 2** : `pair()` en mode normal → `AuthenticationFailed`/`AuthenticationCanceled` + déconnexion.
+**Fix** : `pair()` placé dans `OneBLEClient.pair()` (mode appairage, bouton pressé).
+  Le module accepte le SMP uniquement en mode FBDE0100. BlueZ stocke le bond
+  dans `/var/lib/bluetooth/` et le réutilise automatiquement aux reconnexions suivantes.
+**Commit** : `fix(ble): move BLE SMP \`pair()\` to \`OneBLEClient.pair()\` (pairing mode only) — removes invalid \`pair()\` from \`connect_and_auth\``
 
 ### Amélioration #3 — Parse advertising data (optionnel)
 **Fichier** : `one/one_ble.py`  

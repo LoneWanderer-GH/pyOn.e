@@ -274,6 +274,28 @@ class OneBLEClient:
         # 4. Auth AES applicative (JS f5738)
         await client._authenticate()
 
+        # 4b. Bonding BLE (SMP) — création du bond BlueZ pendant le mode appairage
+        # Le module accepte le SMP UNIQUEMENT quand le bouton est pressé (FBDE0100).
+        # En mode connexion normale, il rejette (AuthenticationFailed/Canceled).
+        # Une fois le bond créé, BlueZ le réutilise automatiquement aux reconnexions
+        # suivantes → lien chiffré dès connect() → FBDE0104 et 2A08 accessibles.
+        # Fix #2 (2026-07-05) : déplacé ici (pair mode) depuis connect_and_auth().
+        try:
+            logger.info("Création bond BLE (SMP pair) — module en mode appairage…")
+            await client._client.pair()
+            logger.info("Bond BLE créé avec succès")
+        except Exception as e:
+            logger.warning("bleak.pair() ignoré: %s", e)
+
+        # pair() peut invalider le cache GATT (reconnect interne BlueZ).
+        # On vérifie et reconnecte si nécessaire.
+        if not client._client.is_connected:
+            logger.info("Reconnexion post-pair() (cache GATT invalide)…")
+            await asyncio.sleep(1.0)
+            await client._client.connect()
+            logger.info("Reconnecté — re-auth sur lien chiffré")
+            await client._authenticate()
+
         # 5. Sync RTC (JS f5754)
         await client._sync_rtc()
 
@@ -316,17 +338,23 @@ class OneBLEClient:
     # ---------------------------------------------------------------- connexion normale
 
     async def connect_and_auth(self) -> None:
-        """Connexion + auth AES + bonding BLE + sync RTC.
+        """Connexion + auth AES + sync RTC (reconnexion avec bond BlueZ existant).
 
-        Séquence corrigée (Fix #1 + Fix #2) :
-          1. Connexion BLE.
-          2. Auth AES applicative (FBDE0001 → FBDE0003) — fonctionne sans chiffrement.
+        Séquence normale (bond déjà stocké dans BlueZ depuis l'appairage initial) :
+          1. Connexion BLE — BlueZ réutilise automatiquement le bond stocké
+             → lien chiffré dès connect() → FBDE0104 et 2A08 accessibles.
+          2. Auth AES applicative (FBDE0001 → FBDE0003).
           3. Re-lecture FBDE0002 post-auth : détection rotation de shared_key (Fix #1).
-          4. Bonding BLE (SMP pair()) — APRÈS l'AES auth (Fix #2).
-             Le module exige un lien chiffré pour 2A08 (RTC) et FBDE0104 (STATUS).
-             Android/iOS gèrent le bonding de façon transparente (OS); BlueZ requiert
-             un appel explicite. pair() est appelé APRÈS l'AES auth car l'ordre
-             inverse provoque un AuthenticationFailed.
+          4. Sync RTC (best-effort, non bloquant).
+
+        Si le bond n'existe pas (ex. nouveau Raspi, /var/lib/bluetooth/ effacé) :
+          → relancer avec --pair (bouton module requis) pour recréer le bond BlueZ.
+
+        Fix #1 (2026-07-05) : re-lecture FBDE0002 post-auth.
+        Fix #2-rev (2026-07-05) : pair() supprimé d'ici, déplacé dans OneBLEClient.pair().
+          Le module rejette le SMP en mode normal (AuthenticationFailed/Canceled).
+          Le bond est créé une seule fois lors de l'appairage initial (bouton pressé).
+        """
           5. Sync RTC (best-effort, non bloquant).
 
         Fix #1 (2026-07-05) : re-lecture FBDE0002 post-auth, détection rotation clé.
@@ -359,20 +387,12 @@ class OneBLEClient:
             # mode connexion normale (uniquement accessible en mode appairage)
             logger.debug("Re-lecture FBDE0002 post-auth ignorée: %s", e)
 
-        # Fix #2 — Bonding BLE (SMP) après AES auth
-        # Le module répond NotAuthorized sur 2A08 et FBDE0104 sans lien chiffré.
-        # Android/iOS déclenchent le SMP automatiquement ; BlueZ requiert pair().
-        # L'ordre est critique : pair() APRÈS _authenticate(), pas avant.
-        # Référence : docs/diagrams/python/04_diff_analysis.md — Check #2
-        try:
-            logger.debug("Tentative bonding BLE (SMP pair)…")
-            await self._client.pair()
-            logger.info("Bonding BLE établi")
-        except Exception as e:
-            # Ignoré : si le bond existe déjà en cache BlueZ, pair() peut
-            # retourner une erreur bénigne. On continue dans tous les cas.
-            logger.warning("pair() ignoré (bond peut-être déjà actif): %s", e)
-
+        # Fix #2 (2026-07-05) : ajout pair() post-AES-auth pour lien BLE chiffré.
+        #   → Annulé par Fix #2-rev (2026-07-05) : pair() déplacé dans OneBLEClient.pair()
+        #     (mode appairage, bouton pressé). En mode connexion normale, le module
+        #     rejette pair() (AuthenticationFailed/Canceled) et BlueZ réutilise
+        #     automatiquement le bond stocké depuis l'appairage initial.
+        #     Si le bond n'existe pas, relancer --pair.
         await self._sync_rtc()
         logger.info("Auth + RTC OK")
 

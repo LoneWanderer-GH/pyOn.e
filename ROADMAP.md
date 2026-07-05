@@ -34,9 +34,11 @@
   → Suspect principal des reconnexions instables.  
   → Implémenté 2026-07-05 — voir [docs/diagrams/python/04_diff_analysis.md](docs/diagrams/python/04_diff_analysis.md)
 
-- [X] **[⚠️ Check #2 — Confirmé par logs]** `one/one_ble.py` — `connect_and_auth()` : ajouter `pair()` après l'AES auth pour établir le lien BLE chiffré (SMP bonding).  
-  → Confirmé par logs : `NotAuthorized` sur 2A08 et FBDE0104 sans bonding.  
-  → Android/iOS glosent le SMP transparemment ; BlueZ/bleak requièrent `pair()` explicite.  
+- [X] **[⚠️ Check #2 — Confirmé + Fix #2-rev appliqué]** `one/one_ble.py` — Bonding BLE (SMP) :  
+  → Confirmé par logs : `NotAuthorized` sur 2A08 et FBDE0104.  
+  → Le module **rejette** `pair()` en mode normal (`AuthenticationFailed`/`AuthenticationCanceled`).  
+  → `bleak.pair()` déplacé dans `OneBLEClient.pair()` (mode appairage, bouton pressé).  
+  → BlueZ stocke le bond, réutilisé automatiquement aux reconnexions.  
   → Implémenté 2026-07-05
 
 - [ ] **[ℹ️ Amélioration #3]** `one/one_ble.py` — `scan_for_use()` : parser `advertisement_data.service_data` pour obtenir le status en mode proximité sans connexion (comme JS).

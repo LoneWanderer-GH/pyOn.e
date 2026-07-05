@@ -50,7 +50,17 @@ sequenceDiagram
         C->>Dev: write_gatt_char(FBDE0003, response[32B], response=True)
         Dev-->>C: ACK
     end
-
+    rect rgb(255, 230, 200)
+        Note over C,Dev: ── Fix #2 — Bonding BLE (SMP pair) ──
+        C->>Dev: pair() [BlueZ SMP pairing]
+        Note right of C: UNIQUEMENT en mode appairage<br/>(bouton pressé, FBDE0100)<br/>Module accepte le SMP ici<br/>BlueZ stocke le bond dans<br/>/var/lib/bluetooth/
+        Dev-->>C: bond établi
+        alt pair() invalide le cache GATT (reconnect interne BlueZ)
+            C->>BL: disconnect()
+            C->>BL: connect() + _authenticate()
+            Note over C: Reconnexion propre après pair()
+        end
+    end
     rect rgb(240, 220, 255)
         Note over C,Dev: ── Sync RTC ── [✅ conforme JS]
         C->>Dev: write_gatt_char(2A08, [year%100, month, day, h, m, s])
@@ -59,11 +69,11 @@ sequenceDiagram
     end
 
     rect rgb(200, 255, 240)
-        Note over C,Dev: ── utilisationProcess Python ── [✅ conforme JS + rotation clé]
+        Note over C,Dev: ── utilisationProcess Python ── [conforme JS + rotation clé + bond BLE]
         C->>Dev: start_notify(FBDE0104, _handler)
         Dev-->>C: CCCD activé
         C->>Dev: read_gatt_char(FBDE0002) ← re-lecture post-auth
-        Note right of C: ✅ Spécifique Python : détection\nrotation shared_key après auth
+        Note right of C: Détection rotation shared_key après auth
         Dev-->>C: raw2
         C->>C: si raw2 ≠ raw1 → shared_key = reversed(raw2)
         C->>Dev: read_gatt_char(FBDE0104)
