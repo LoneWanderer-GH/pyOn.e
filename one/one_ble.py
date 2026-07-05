@@ -321,7 +321,14 @@ class OneBLEClient:
         Séquence (calquée sur connect() JS de BleNetworkManager) :
           1. Connexion BLE.
           2. Auth AES applicative (FBDE0001 → FBDE0003) — sans chiffrement BLE.
-          3. Sync RTC (best-effort, non bloquant).
+          3. Re-lecture FBDE0002 post-auth : détection rotation de shared_key.
+          4. Sync RTC (best-effort, non bloquant).
+
+        Fix #1 (2026-07-05) : ajout de la re-lecture FBDE0002 après auth.
+        En mode association, le JS ne relit pas FBDE0002 en mode connexion normale,
+        mais certains firmwares renouvellent la shared_key après chaque session.
+        Si la clé change, on met à jour self.shared_key ET on rejoue l'auth avec la
+        nouvelle clé pour que la session courante soit valide.
 
         Note : ce module (RC0 / ON.E firmware 2.x) rejette pair() avec
         AuthenticationFailed ET se déconnecte immédiatement. Le bonding BLE
@@ -333,6 +340,28 @@ class OneBLEClient:
         await self._client.connect()
         logger.info("Connecté")
         await self._authenticate()
+
+        # Fix #1 — re-lecture FBDE0002 post-auth (détection rotation shared_key)
+        # Référence : docs/diagrams/python/04_diff_analysis.md — Fix #1
+        try:
+            raw_shared2 = await self._client.read_gatt_char(CHR_SHARED_KEY_UUID)
+            new_shared_key = bytes(reversed(raw_shared2))
+            if new_shared_key != self.shared_key:
+                logger.warning(
+                    "FBDE0002 a changé après auth — rotation de shared_key détectée: %s → %s",
+                    self.shared_key.hex(), new_shared_key.hex(),
+                )
+                self.shared_key = new_shared_key
+                # Rejouer l'auth avec la nouvelle clé
+                await self._authenticate()
+                logger.info("Re-auth avec nouvelle shared_key OK")
+            else:
+                logger.debug("FBDE0002 stable après auth: %s", self.shared_key.hex())
+        except Exception as e:
+            # Non bloquant : certains firmwares refusent la lecture de FBDE0002 en
+            # mode connexion normale (uniquement accessible en mode appairage)
+            logger.debug("Re-lecture FBDE0002 post-auth ignorée: %s", e)
+
         await self._sync_rtc()
         logger.info("Auth + RTC OK")
 
