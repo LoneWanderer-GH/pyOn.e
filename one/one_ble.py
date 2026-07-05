@@ -354,7 +354,7 @@ class OneBLEClient:
         Fix #2-rev (2026-07-05) : pair() supprimé d'ici, déplacé dans OneBLEClient.pair().
           Le module rejette le SMP en mode normal (AuthenticationFailed/Canceled).
           Le bond est créé une seule fois lors de l'appairage initial (bouton pressé).
-        """
+          
           5. Sync RTC (best-effort, non bloquant).
 
         Fix #1 (2026-07-05) : re-lecture FBDE0002 post-auth, détection rotation clé.
