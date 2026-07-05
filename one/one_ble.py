@@ -177,15 +177,16 @@ class OneBLEClient:
         # sauvegarder result.shared_key.hex() pour reconnexion
     """
 
-    def __init__(self, address: str, shared_key: bytes):
+    def __init__(self, address: str, shared_key: bytes, adapter: str = ""):
         self.address    = address
         self.shared_key = shared_key
+        self.adapter    = adapter  # ex: "hci1" pour un dongle USB
         self._client: Optional[BleakClient] = None
 
     # ---------------------------------------------------------------- scan
 
     @staticmethod
-    async def scan_for_use(timeout: float = 10.0) -> list[BLEDevice]:
+    async def scan_for_use(timeout: float = 10.0, adapter: str = "") -> list[BLEDevice]:
         """Scan les modules One en mode utilisation normale (ADV_UUID_USE)."""
         found: list[BLEDevice] = []
         found_event = asyncio.Event()
@@ -197,7 +198,10 @@ class OneBLEClient:
                 logger.debug("Trouvé (use): %s %s", device.address, device.name)
                 found_event.set()
 
-        async with BleakScanner(detection_callback=_cb):
+        scanner_kwargs = {"detection_callback": _cb}
+        if adapter:
+            scanner_kwargs["adapter"] = adapter  # type: ignore[assignment]
+        async with BleakScanner(**scanner_kwargs):  # type: ignore[arg-type]
             try:
                 await asyncio.wait_for(found_event.wait(), timeout=timeout)
             except asyncio.TimeoutError:
@@ -206,7 +210,7 @@ class OneBLEClient:
         return found
 
     @staticmethod
-    async def scan_for_pairing(timeout: float = 30.0) -> list[BLEDevice]:
+    async def scan_for_pairing(timeout: float = 30.0, adapter: str = "") -> list[BLEDevice]:
         """Scan les modules One en mode appairage (ADV_UUID_PAIR).
 
         S'arrête dès le premier module trouvé (comme le JS resetAndStopScan).
@@ -222,7 +226,10 @@ class OneBLEClient:
                 logger.info("Module en mode appairage: %s %s", device.address, device.name)
                 found_event.set()  # Arrêt immédiat dès le premier trouvé
 
-        async with BleakScanner(detection_callback=_cb):
+        scanner_kwargs = {"detection_callback": _cb}
+        if adapter:
+            scanner_kwargs["adapter"] = adapter  # type: ignore[assignment]
+        async with BleakScanner(**scanner_kwargs):  # type: ignore[arg-type]
             try:
                 await asyncio.wait_for(found_event.wait(), timeout=timeout)
             except asyncio.TimeoutError:
@@ -233,7 +240,7 @@ class OneBLEClient:
     # ---------------------------------------------------------------- appairage
 
     @classmethod
-    async def pair(cls, address: str) -> tuple["OneBLEClient", OnePairingResult]:
+    async def pair(cls, address: str, adapter: str = "") -> tuple["OneBLEClient", OnePairingResult]:
         """Appaire un module One vierge (ou réinitialisé).
 
         Pré-requis : le bouton d'appairage du module doit être pressé
@@ -256,7 +263,11 @@ class OneBLEClient:
         client = cls.__new__(cls)
         client.address    = address
         client.shared_key = b""
-        client._client    = BleakClient(address, timeout=15.0)
+        client.adapter    = adapter
+        ble_kwargs: dict = {"timeout": 15.0}
+        if adapter:
+            ble_kwargs["adapter"] = adapter
+        client._client    = BleakClient(address, **ble_kwargs)  # type: ignore[arg-type]
         await client._client.connect()
         logger.info("Connecté (appairage)")
 
@@ -345,7 +356,10 @@ class OneBLEClient:
         Fix #2 (2026-07-05) : ajout pair() post-AES-auth pour lien BLE chiffré.
         """
         logger.info("Connexion à %s", self.address)
-        self._client = BleakClient(self.address)
+        ble_kwargs: dict = {}
+        if self.adapter:
+            ble_kwargs["adapter"] = self.adapter
+        self._client = BleakClient(self.address, **ble_kwargs)  # type: ignore[arg-type]
         await self._client.connect()
         logger.info("Connecté")
         await self._authenticate()

@@ -182,11 +182,13 @@ class OneDaemon:
         cmd_port: int,
         config_path: Path,
         poll_interval_s: float = 5.0,
+        adapter: str = "",
     ):
         self.address        = address
         self.shared_key     = shared_key
         self.config_path    = config_path
         self.poll_interval  = poll_interval_s
+        self.adapter        = adapter
         self.pub            = ZmqPublisher(pub_port)
         self._stop          = False
         self._retry_event   = asyncio.Event()
@@ -228,7 +230,7 @@ class OneDaemon:
         """Scan + appairage (bouton sur le module requis)."""
         logger.info("Démarrage du scan d'appairage (30 s) — appuyez sur le bouton du module…")
         self._pub_connection("pairing", "Scan appairage en cours…")
-        devices = await OneBLEClient.scan_for_pairing(timeout=30.0)
+        devices = await OneBLEClient.scan_for_pairing(timeout=30.0, adapter=self.adapter)
 
         if not devices:
             logger.warning("Aucun module en mode appairage trouvé")
@@ -243,7 +245,7 @@ class OneDaemon:
         logger.info("Module trouvé: %s (%s)", device.address, device.name)
 
         try:
-            client, result = await OneBLEClient.pair(device.address)
+            client, result = await OneBLEClient.pair(device.address, adapter=self.adapter)
             self._client    = client
             self.address    = result.address
             self.shared_key = result.shared_key
@@ -270,7 +272,7 @@ class OneDaemon:
     async def _session(self, retry: int) -> None:
         """Une session BLE complète : connexion → auth → subscribe → boucle."""
         self._pub_connection("connecting", f"Connexion… essai {retry}", retry=retry)
-        self._client = OneBLEClient(self.address, self.shared_key)
+        self._client = OneBLEClient(self.address, self.shared_key, adapter=self.adapter)
 
         await self._client.connect_and_auth()
 
@@ -389,12 +391,12 @@ class OneDaemon:
 # Mode appairage CLI (--pair)
 # ---------------------------------------------------------------------------
 
-async def _run_pair_cli(config_path: Path, address: str) -> OnePairingResult | None:
+async def _run_pair_cli(config_path: Path, address: str, adapter: str = "") -> OnePairingResult | None:
     """Appairage en ligne de commande (sans démarrer le démon)."""
     print("Appairage One — appuyez sur le bouton du module maintenant…")
     print(f"Scan pendant 30 secondes...")
 
-    devices = await OneBLEClient.scan_for_pairing(timeout=30.0)
+    devices = await OneBLEClient.scan_for_pairing(timeout=30.0, adapter=adapter)
     if not devices:
         print("Aucun module en mode appairage trouvé.")
         return None
@@ -415,7 +417,7 @@ async def _run_pair_cli(config_path: Path, address: str) -> OnePairingResult | N
         device = devices[idx]
 
     print(f"Appairage avec {device.address} …")
-    _, result = await OneBLEClient.pair(device.address)
+    _, result = await OneBLEClient.pair(device.address, adapter=adapter)
 
     cfg = load_config(config_path)
     cfg["address"]    = result.address
@@ -462,6 +464,9 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--log-level",
                    default=os.environ.get("ONE_LOG_LEVEL", "INFO"),
                    choices=["DEBUG", "INFO", "WARNING", "ERROR"])
+    p.add_argument("--adapter",
+                   default=os.environ.get("ONE_BT_ADAPTER", ""),
+                   help="Adaptateur Bluetooth BlueZ (ex: hci1 pour dongle USB, défaut: hci0)")
     return p.parse_args()
 
 
@@ -478,7 +483,7 @@ def main() -> None:
 
     # ---- Appairage seul (--pair-only) ----
     if args.pair_only:
-        result = asyncio.run(_run_pair_cli(config_path, args.address))
+        result = asyncio.run(_run_pair_cli(config_path, args.address, adapter=args.adapter))
         sys.exit(0 if result else 1)
 
     # ---- Chargement config ----
@@ -491,7 +496,7 @@ def main() -> None:
     # ---- Appairage si demandé ou si pas de clé ----
     need_pair = args.pair or not shared_key or not address
     if need_pair:
-        result = asyncio.run(_run_pair_cli(config_path, address))
+        result = asyncio.run(_run_pair_cli(config_path, address, adapter=args.adapter))
         if not result:
             sys.exit(1)
         address    = result.address
@@ -516,6 +521,7 @@ def main() -> None:
         cmd_port=args.cmd_port,
         config_path=config_path,
         poll_interval_s=args.poll_interval,
+        adapter=args.adapter,
     )
 
     def _sig_handler():
