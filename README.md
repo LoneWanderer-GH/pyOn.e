@@ -6,7 +6,7 @@ Architecture daemon headless (Pi3) + serveur web + intégrations HomeKit / Magic
 Web UI:
 <img src="docs/img/web_ui.png" alt="drawing" style="width:350px;"/>
 
-Etat du reverse engineering → [voir ici](docs\REVERSE_ENGINEERING.md)
+Etat du reverse engineering → [voir ici](docs/REVERSE_ENGINEERING.md)
 
 ---
 
