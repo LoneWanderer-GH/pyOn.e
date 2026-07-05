@@ -104,18 +104,25 @@ de l’authentification applicative AES décrite ci-dessus.
 **Confirmé par logs (2026-07-05)** : sans bonding, les deux opérations retournent
 `[org.bluez.Error.NotAuthorized] Operation Not Authorized` même après une AES auth réussie.
 
+**Pourquoi `bleak.pair()` échoue (diagnostic Fix #3 — 2026-07-05) :**
+
+BlueZ requiert un **agent enregistré** (`org.bluez.Agent1`) même pour SMP « Just Works »
+(NoInputNoOutput). Sans agent, `Device1.Pair()` retourne `AuthenticationFailed`.
+Android/iOS gèrent cela de façon transparente via l’OS. Sur BlueZ/Raspi,
+`bluetoothctl` a un agent intégré et fait l’affaire.
+
 **Comportement du module selon le mode :**
 
-| Mode | SMP pair() accepté ? |
+| Mode | SMP accepté via bluetoothctl ? |
 |---|---|
 | Appairage (FBDE0100, bouton pressé) | ✅ Oui — crée le bond BlueZ |
-| Connexion normale (FBDE0000) | ❌ Non — `AuthenticationFailed` ou `AuthenticationCanceled` + déconnexion |
+| Connexion normale (FBDE0000) | ❌ Non — module rejette le SMP |
 
 **Séquence correcte — appairage initial (une seule fois, bouton pressé) :**
 
 1. `connect()` — connexion BLE en mode FBDE0100
 2. `_authenticate()` — AES handshake (FBDE0001 → FBDE0003)
-3. `pair()` — bonding SMP, stocké dans `/var/lib/bluetooth/`
+3. `bluetoothctl pair <addr>` — bonding SMP via subprocess, stocké dans `/var/lib/bluetooth/`
 4. `_sync_rtc()` + subscribe/read FBDE0104
 
 **Séquence correcte — reconnexions normales :**

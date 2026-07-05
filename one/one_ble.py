@@ -274,27 +274,11 @@ class OneBLEClient:
         # 4. Auth AES applicative (JS f5738)
         await client._authenticate()
 
-        # 4b. Bonding BLE (SMP) — création du bond BlueZ pendant le mode appairage
-        # Le module accepte le SMP UNIQUEMENT quand le bouton est pressé (FBDE0100).
-        # En mode connexion normale, il rejette (AuthenticationFailed/Canceled).
-        # Une fois le bond créé, BlueZ le réutilise automatiquement aux reconnexions
-        # suivantes → lien chiffré dès connect() → FBDE0104 et 2A08 accessibles.
-        # Fix #2 (2026-07-05) : déplacé ici (pair mode) depuis connect_and_auth().
-        try:
-            logger.info("Création bond BLE (SMP pair) — module en mode appairage…")
-            await client._client.pair()
-            logger.info("Bond BLE créé avec succès")
-        except Exception as e:
-            logger.warning("bleak.pair() ignoré: %s", e)
-
-        # pair() peut invalider le cache GATT (reconnect interne BlueZ).
-        # On vérifie et reconnecte si nécessaire.
-        if not client._client.is_connected:
-            logger.info("Reconnexion post-pair() (cache GATT invalide)…")
-            await asyncio.sleep(1.0)
-            await client._client.connect()
-            logger.info("Reconnecté — re-auth sur lien chiffré")
-            await client._authenticate()
+        # 4b. Bonding BLE (SMP) — Fix #3 (2026-07-05) : utilise bluetoothctl au lieu de
+        # bleak.pair(). bleak.pair() échoue avec AuthenticationFailed car BlueZ requiert
+        # un agent enregistré pour SMP. bluetoothctl a un agent NoInputNoOutput intégré
+        # et appelle Device1.Pair() sur la connexion bleak existante sans la perturber.
+        await client._try_bluetoothctl_pair(address)
 
         # 5. Sync RTC (JS f5754)
         await client._sync_rtc()
@@ -354,7 +338,7 @@ class OneBLEClient:
         Fix #2-rev (2026-07-05) : pair() supprimé d'ici, déplacé dans OneBLEClient.pair().
           Le module rejette le SMP en mode normal (AuthenticationFailed/Canceled).
           Le bond est créé une seule fois lors de l'appairage initial (bouton pressé).
-          
+
           5. Sync RTC (best-effort, non bloquant).
 
         Fix #1 (2026-07-05) : re-lecture FBDE0002 post-auth, détection rotation clé.
@@ -429,6 +413,51 @@ class OneBLEClient:
 
     async def unsubscribe_status(self) -> None:
         await self._client.stop_notify(CHR_STATUS_UUID)
+
+    # ---------------------------------------------------------------- bonding BLE via bluetoothctl
+
+    @staticmethod
+    async def _try_bluetoothctl_pair(address: str, timeout: float = 20.0) -> bool:
+        """Bond BLE SMP via bluetoothctl (agent NoInputNoOutput intégré).
+
+        bleak.pair() échoue sur BlueZ/Raspi (AuthenticationFailed) car BlueZ requiert
+        un agent enregistré même pour "Just Works". bluetoothctl a un agent intégré
+        et appelle Device1.Pair() sur la connexion bleak existante sans la perturber.
+
+        Retourne True si le bond est créé, False sinon (best-effort, non bloquant).
+        """
+        logger.info("Bond BLE via bluetoothctl pair %s …", address)
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bluetoothctl", "pair", address,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            output = (stdout + stderr).decode(errors="replace").strip()
+            logger.debug("bluetoothctl pair output: %s", output)
+            if proc.returncode == 0 or "Pairing successful" in output or "AlreadyExists" in output:
+                logger.info("Bond BLE créé (ou déjà existant)")
+                return True
+            else:
+                logger.warning("bluetoothctl pair a échoué (code=%d): %s", proc.returncode, output[:200])
+                return False
+        except asyncio.TimeoutError:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            logger.warning("bluetoothctl pair timeout (%ds) — bond non créé", timeout)
+            return False
+        except FileNotFoundError:
+            logger.warning(
+                "bluetoothctl introuvable — bond manuel requis: "
+                "bluetoothctl pair %s", address
+            )
+            return False
+        except Exception as e:
+            logger.warning("bluetoothctl pair exception: %s", e)
+            return False
 
     # ---------------------------------------------------------------- interne auth
 

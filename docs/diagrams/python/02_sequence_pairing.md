@@ -51,15 +51,10 @@ sequenceDiagram
         Dev-->>C: ACK
     end
     rect rgb(255, 230, 200)
-        Note over C,Dev: ── Fix #2 — Bonding BLE (SMP pair) ──
-        C->>Dev: pair() [BlueZ SMP pairing]
-        Note right of C: UNIQUEMENT en mode appairage<br/>(bouton pressé, FBDE0100)<br/>Module accepte le SMP ici<br/>BlueZ stocke le bond dans<br/>/var/lib/bluetooth/
-        Dev-->>C: bond établi
-        alt pair() invalide le cache GATT (reconnect interne BlueZ)
-            C->>BL: disconnect()
-            C->>BL: connect() + _authenticate()
-            Note over C: Reconnexion propre après pair()
-        end
+        Note over C,Dev: ── Fix #3 — Bonding BLE (SMP via bluetoothctl) ──
+        C->>BL: _try_bluetoothctl_pair(address)
+        Note right of C: Appelle 'bluetoothctl pair addr'<br/>via subprocess — agent NoInputNoOutput<br/>intégré à bluetoothctl.<br/>bleak.pair() échouait (AuthenticationFailed)<br/>car BlueZ requiert un agent enregistré.
+        BL-->>C: bond créé (ou warning si échec)
     end
     rect rgb(240, 220, 255)
         Note over C,Dev: ── Sync RTC ── [✅ conforme JS]
