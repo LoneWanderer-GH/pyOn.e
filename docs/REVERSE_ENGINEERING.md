@@ -4,6 +4,7 @@ L'analyse s'appuie sur une décompilation du code Hermes de l'appli Android "On.
 Les éléments suivants sont déterminés par l'analyse de code manuelle et une assistance avec un LLM de codage.
 
 **Un doute subsiste sur les valeurs des clés de chiffrement utilisées et sur la mécanique d'appairage.**
+**Les controleurs bluetooth d'un Raspberry Pi 3 sont peut être obsolètes**!
 
 ---
 

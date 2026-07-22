@@ -417,7 +417,11 @@ async def _run_pair_cli(config_path: Path, address: str, adapter: str = "") -> O
         device = devices[idx]
 
     print(f"Appairage avec {device.address} …")
-    _, result = await OneBLEClient.pair(device.address, adapter=adapter)
+    pairing_client, result = await OneBLEClient.pair(device.address, adapter=adapter)
+    # Déconnexion critique : libère la connexion BLE avant de fermer ce loop.
+    # Sans ça, le module reste occupé et le daemon ne peut pas se reconnecter.
+    # Supprime aussi les handlers WinRT NOTIFY pour éviter "Event loop is closed".
+    await pairing_client.disconnect()
 
     cfg = load_config(config_path)
     cfg["address"]    = result.address
@@ -470,6 +474,15 @@ def _parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
+def _make_event_loop() -> asyncio.AbstractEventLoop:
+    """Crée un SelectorEventLoop sur Windows (requis par ZMQ — ProactorEventLoop
+    n'implémente pas add_reader). Sur les autres OS, retourne le loop par défaut.
+    Évite l'usage de WindowsSelectorEventLoopPolicy (deprecated Python 3.14+)."""
+    if sys.platform == "win32":
+        return asyncio.SelectorEventLoop()
+    return asyncio.new_event_loop()
+
+
 def main() -> None:
     args = _parse_args()
 
@@ -483,7 +496,9 @@ def main() -> None:
 
     # ---- Appairage seul (--pair-only) ----
     if args.pair_only:
-        result = asyncio.run(_run_pair_cli(config_path, args.address, adapter=args.adapter))
+        loop = _make_event_loop()
+        result = loop.run_until_complete(_run_pair_cli(config_path, args.address, adapter=args.adapter))
+        loop.close()
         sys.exit(0 if result else 1)
 
     # ---- Chargement config ----
@@ -496,7 +511,9 @@ def main() -> None:
     # ---- Appairage si demandé ou si pas de clé ----
     need_pair = args.pair or not shared_key or not address
     if need_pair:
-        result = asyncio.run(_run_pair_cli(config_path, address, adapter=args.adapter))
+        loop = _make_event_loop()
+        result = loop.run_until_complete(_run_pair_cli(config_path, address, adapter=args.adapter))
+        loop.close()
         if not result:
             sys.exit(1)
         address    = result.address
@@ -511,7 +528,7 @@ def main() -> None:
         logger.error("Shared key absente. Utilisez --pair pour appaire le module.")
         sys.exit(1)
 
-    loop = asyncio.new_event_loop()
+    loop = _make_event_loop()
     asyncio.set_event_loop(loop)
 
     daemon = OneDaemon(

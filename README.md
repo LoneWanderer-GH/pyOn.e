@@ -1,11 +1,16 @@
-# Module One — WA Conception (Reverse Engineering BLE)
+# Module On.e — WA Conception for connected pools (Reverse Engineering BLE)
 
-Supervision et rétro-ingénierie d'un module **One** de WA Conception (contrôleur piscine pompe + éclairage) via BLE.  
-Architecture daemon headless (Pi3) + serveur web + intégrations HomeKit / MagicMirror.
+English → see [README_EN.md](./README_EN.md)
 
-Web UI:
-<img src="docs/img/web_ui.png" alt="drawing" style="width:350px;"/>
 
+Supervision et rétro-ingénierie d'un [module **On.e**](https://www.wa-conception.com/produit/module-on-e/) de WA Conception (contrôleur piscine pompe + éclairage) via BLE.
+
+[Architecture](#Architecture) daemon headless (Pi3) + serveur web + intégrations HomeKit / MagicMirror.
+
+<!-- Web UI: -->
+<!-- <img src="docs/img/web_ui.png" alt="drawing" style="width:350px;"/> -->
+
+Contributions souhaitées.
 Etat du reverse engineering → [voir ici](docs/REVERSE_ENGINEERING.md)
 
 ---

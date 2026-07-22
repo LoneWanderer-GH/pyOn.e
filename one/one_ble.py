@@ -16,6 +16,7 @@ Dépendances : bleak, pycryptodome (Crypto.Cipher.AES)
 from __future__ import annotations
 
 import asyncio
+import ctypes
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -71,7 +72,17 @@ PRIVATE_KEY = bytes.fromhex("1141a80537444a6a85888d84115f2811")
 FILTRATION_MODES = {0: "Manuel", 1: "Horloge", 2: "Auto"}
 ECLAIRAGE_MODES  = {0: "Manuel", 1: "Horloge", 2: "Auto"}
 
-
+@dataclass
+class OneStatus_CTYPES(ctypes.LittleEndianStructure):
+    _fields_ = [
+        ("filtration_mode", ctypes.c_uint8, 2),
+        ("filtration_state", ctypes.c_uint8, 1),
+        ("light_mode", ctypes.c_uint8, 2),
+        ("light_state", ctypes.c_uint8, 1),
+        ("light_type", ctypes.c_uint8, 1),
+        ("reserved", ctypes.c_uint8, 1),
+    ]
+    
 @dataclass
 class OneStatus:
     """État instantané pompe + éclairage."""
@@ -285,11 +296,14 @@ class OneBLEClient:
         # 4. Auth AES applicative (JS f5738)
         await client._authenticate()
 
-        # 4b. Bonding BLE (SMP) — Fix #3 (2026-07-05) : utilise bluetoothctl au lieu de
-        # bleak.pair(). bleak.pair() échoue avec AuthenticationFailed car BlueZ requiert
-        # un agent enregistré pour SMP. bluetoothctl a un agent NoInputNoOutput intégré
-        # et appelle Device1.Pair() sur la connexion bleak existante sans la perturber.
-        await client._try_bluetoothctl_pair(address)
+        # 4b. Bonding BLE — lancé en tâche parallèle pour ne PAS bloquer utilisationProcess.
+        # Sur Windows, bleak.pair() (WinRT) peut bloquer jusqu'à 31s (attente SMP).
+        # Si on l'await directement, le module timeout avant la fin de utilisationProcess.
+        # asyncio.create_task() le fait tourner en arrière-plan sur le même event loop.
+        bond_task: asyncio.Task = asyncio.create_task(
+            client._try_ble_bond(address, client._client),
+            name="ble_smp_bond",
+        )
 
         # 5. Sync RTC (JS f5754)
         await client._sync_rtc()
@@ -304,12 +318,16 @@ class OneBLEClient:
 
             await client.subscribe_status(_dummy_cb)
 
-            # Re-lecture FBDE0002 APRÈS auth : certains modules génèrent
-            # une nouvelle shared_key à ce moment-là
+            # Re-lecture FBDE0002 APRÈS auth : certains modules effectuent
+            # une rotation de la clé. Cette rotation est un ACK du module,
+            # PAS une nouvelle clé à stocker — la clé initiale reste la clé permanente.
             raw_shared2 = await client._client.read_gatt_char(CHR_SHARED_KEY_UUID)
             if raw_shared2 != raw_shared:
-                client.shared_key = bytes(reversed(raw_shared2))
-                logger.info("FBDE0002 mis à jour après auth: %s", client.shared_key.hex())
+                rotated = bytes(reversed(raw_shared2))
+                logger.info("FBDE0002 rotation après auth: %s → %s (on conserve la clé initiale)",
+                            client.shared_key.hex(), rotated.hex())
+                # NE PAS mettre à jour client.shared_key : c'est un ACK, pas une nouvelle clé.
+                # La clé à persister est la valeur lue avant l'auth (client.shared_key actuel).
 
             # Lecture initiale STATUS (utilisationProcess JS)
             try:
@@ -320,6 +338,15 @@ class OneBLEClient:
 
         except Exception as e:
             logger.warning("utilisationProcess partiel (appairage): %s", e)
+
+        # 4b. Attendre le résultat du bond (maintenant que utilisationProcess est terminé,
+        # la connexion est stable — le module ne va plus timeout).
+        if not bond_task.done():
+            try:
+                await asyncio.wait_for(bond_task, timeout=30.0)
+            except (asyncio.TimeoutError, asyncio.CancelledError, Exception) as e:
+                bond_task.cancel()
+                logger.debug("Bond BLE terminé (best-effort): %s", e or "timeout")
 
         result = OnePairingResult(
             address=address,
@@ -370,14 +397,12 @@ class OneBLEClient:
             raw_shared2 = await self._client.read_gatt_char(CHR_SHARED_KEY_UUID)
             new_shared_key = bytes(reversed(raw_shared2))
             if new_shared_key != self.shared_key:
-                logger.warning(
-                    "FBDE0002 a changé après auth — rotation de shared_key détectée: %s → %s",
+                logger.info(
+                    "FBDE0002 rotation après auth: %s → %s (clé permanente inchangée)",
                     self.shared_key.hex(), new_shared_key.hex(),
                 )
-                self.shared_key = new_shared_key
-                # Rejouer l'auth avec la nouvelle clé
-                await self._authenticate()
-                logger.info("Re-auth avec nouvelle shared_key OK")
+                # La rotation est un ACK du module — on NE met PAS à jour self.shared_key
+                # et on ne rejoue PAS l'auth. La clé initiale reste valide.
             else:
                 logger.debug("FBDE0002 stable après auth: %s", self.shared_key.hex())
         except Exception as e:
@@ -428,10 +453,21 @@ class OneBLEClient:
     async def unsubscribe_status(self) -> None:
         await self._client.stop_notify(CHR_STATUS_UUID)
 
-    # ---------------------------------------------------------------- bonding BLE via bluetoothctl
+    # ---------------------------------------------------------------- bonding BLE
 
     @staticmethod
-    async def _try_bluetoothctl_pair(address: str, timeout: float = 20.0) -> bool:
+    async def _try_ble_bond(address: str, bleak_client, timeout: float = 20.0) -> bool:
+        """Bond BLE SMP : bluetoothctl (Linux/BlueZ) ou bleak.pair() (Windows/WinRT).
+
+        Linux : bluetoothctl a un agent NoInputNoOutput intégré → Device1.Pair() sans
+        perturber la connexion bleak existante.
+        Windows : pas de bluetoothctl → bleak.pair() utilise l'API WinRT native,
+        qui gère le pairing "Just Works" sans UI si le module est en mode association.
+        """
+        return await OneBLEClient._try_bluetoothctl_pair(address, bleak_client=bleak_client, timeout=timeout)
+
+    @staticmethod
+    async def _try_bluetoothctl_pair(address: str, bleak_client=None, timeout: float = 20.0) -> bool:
         """Bond BLE SMP via bluetoothctl (agent NoInputNoOutput intégré).
 
         bleak.pair() échoue sur BlueZ/Raspi (AuthenticationFailed) car BlueZ requiert
@@ -463,9 +499,25 @@ class OneBLEClient:
                 pass
             logger.warning("bluetoothctl pair timeout (%ds) — bond non créé", timeout)
             return False
-        except FileNotFoundError:
+        except (FileNotFoundError, NotImplementedError):
+            # FileNotFoundError  : bluetoothctl absent (Windows)
+            # NotImplementedError: SelectorEventLoop Windows ne supporte pas
+            #                      create_subprocess_exec (nécessite ProactorEventLoop)
+            if bleak_client is not None:
+                logger.info("bluetoothctl introuvable ou SelectorEventLoop (Windows) — tentative bleak.pair() WinRT")
+                try:
+                    result = await asyncio.wait_for(bleak_client.pair(), timeout=timeout)
+                    if result:
+                        logger.info("Bond BLE créé via bleak.pair() (WinRT)")
+                        return True
+                    else:
+                        logger.warning("bleak.pair() WinRT a retourné False")
+                        return False
+                except Exception as e_pair:
+                    logger.warning("bleak.pair() WinRT a échoué: %s", e_pair)
+                    return False
             logger.warning(
-                "bluetoothctl introuvable — bond manuel requis: "
+                "bluetoothctl introuvable/non supporté — bond manuel requis: "
                 "bluetoothctl pair %s", address
             )
             return False
